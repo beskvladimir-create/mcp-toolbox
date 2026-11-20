@@ -33,11 +33,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/googleapis/mcp-toolbox/internal/log"
 	"github.com/googleapis/mcp-toolbox/internal/util"
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
-// NormalizeValue converts specific database types to friendly representations (e.g. UUID to string).
+// NormalizeValue converts specific database types to friendly representations (e.g. UUID, interval and time to string).
 func NormalizeValue(val any, oid uint32) any {
 	// 2950 is the standard OID for UUID in PostgreSQL
 	if oid == 2950 {
@@ -64,6 +65,26 @@ func NormalizeValue(val any, oid uint32) any {
 				}
 			}
 			return strs
+		}
+	}
+	// 1186 is the standard OID for interval in PostgreSQL. pgx decodes it into
+	// pgtype.Interval, which has no JSON encoding of its own and would be
+	// serialized as {"Microseconds":...,"Days":...,"Months":...,"Valid":...}.
+	// Return its text form instead, e.g. "1 day 02:03:04.500000".
+	if oid == 1186 {
+		if iv, ok := val.(pgtype.Interval); ok {
+			if s, err := iv.Value(); err == nil && s != nil {
+				return s
+			}
+		}
+	}
+	// 1083 is the standard OID for time (without time zone) in PostgreSQL.
+	// pgtype.Time has the same problem, so return its text form, e.g. "12:34:56.789000".
+	if oid == 1083 {
+		if tm, ok := val.(pgtype.Time); ok {
+			if s, err := tm.Value(); err == nil && s != nil {
+				return s
+			}
 		}
 	}
 	return val
